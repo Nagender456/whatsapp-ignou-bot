@@ -4,9 +4,13 @@
 class MessageHandler:
 
 	def __init__(self, message):
-		self.botName = 'yati'
+		self.botName = "yati"
 		self.response = []
-		self.possibleCommands = ['result', 'marks', 'sessionmarks', 'astatus']
+		self.possibleCommands = [
+			"result", "marks", "grade", "grades", "gradecard", 
+			"astatus", 
+			"name",
+			"enrolment", "enrol"]
 		self.message = message.lower()
 
 	async def handleMessage(self):
@@ -17,28 +21,35 @@ class MessageHandler:
 			return []
 		
 		# Parse Message
-		# messageLower = event.message.message.lower()
-		# messageParts = messageLower.split()
-
 		messageParts = self.message.split()
 
 		# Check the command
-		command, dataParts = await self.getCommand(messageParts)
+		command, dataParts = self.getCommand(messageParts)
 
-		# Return if command didn't match
+		# Return if command didn"t match
 		if command is None:
 			return [(0, None, "Sorry! I did not understand")]
 		
 		self.response = []
 
 		# Perform action based on command
-		if command in ['marks', 'sessionmarks']:
-			marksResponse = await self.getMarksResponse(dataParts)
-			self.response.append(marksResponse)
+		if command in ["marks", "result", "grade", "gradecard", "grades"]:
+			requiredResponse = await self.getMarksResponse(dataParts)
+			if requiredResponse[-1] is None:
+				requiredResponse = await self.getResultResponse(dataParts)
+			self.response.append(requiredResponse)
 		
-		elif command in ['result']:
-			resultResponse = await self.getResultResponse(dataParts)
-			self.response.append(resultResponse)
+		elif command in ["name"]:
+			requiredResponse = await self.getNameResponse(dataParts)
+			self.response.append(requiredResponse)
+		
+		elif command in ["enrolment", "enrol"]:
+			requiredResponse = self.getEnrolmentResponse(dataParts)
+			self.response.append(requiredResponse)
+		
+		# elif command in ["result"]:
+		# 	resultResponse = await self.getResultResponse(dataParts)
+		# 	self.response.append(resultResponse)
 
 		return self.response
 
@@ -55,10 +66,10 @@ class MessageHandler:
 		if len(studentName) < 1:
 			return (0, None, "```Make sure to include Name or Enrolment!```")
 		if session is None:
-			return (0, None, "```Make sure to include Session!```")
+			return (0, None, None)
 
 		studentName = " ".join(studentName)
-		enrolmentNumber = await self.getEnrolmentNumber(studentName)
+		enrolmentNumber = self.getEnrolmentNumber(studentName)
 
 		if enrolmentNumber is None:
 			return (0, None, "```Enrolment not found!```")
@@ -76,10 +87,10 @@ class MessageHandler:
 		from bs4 import BeautifulSoup
 
 		url = "https://termendresult.ignou.ac.in/TermEnd{}/TermEnd{}.asp".format(session.capitalize(), session.capitalize())
-		params = {'eno':enrolmentNumber, 'myhide':'OK'}
+		params = {"eno":enrolmentNumber, "myhide":"OK"}
 
 		urlResponse = requests.post(url, params = params, verify=False)
-		htmlParser = BeautifulSoup(urlResponse.text, 'html.parser')
+		htmlParser = BeautifulSoup(urlResponse.text, "html.parser")
 
 		usefulData = [x.get_text() for x in htmlParser.find_all("strong")][1:]
 		requiredData = []
@@ -93,22 +104,18 @@ class MessageHandler:
 		requiredResponse = f"Subject     Marks\n---------------------\n"
 		for subject in marksResponse:
 			requiredResponse += self.fillString(subject[0], " ", 12, 1)
-			requiredResponse += self.fillString(subject[1], "0", 3, -1) + ' (' + self.fillString(subject[2], "0", 3, -1) + ')'
-			requiredResponse += '\n'
-		requiredResponse = f"*{studentName}*\n\n" + '```' + requiredResponse + '```'
+			requiredResponse += self.fillString(subject[1], "0", 3, -1) + " (" + self.fillString(subject[2], "0", 3, -1) + ")"
+			requiredResponse += "\n"
+		requiredResponse = f"*{studentName}*\n\n" + "```" + requiredResponse + "```"
 		return requiredResponse
 
 	async def getResultResponse(self, dataParts):
-		studentName = []
-
-		for dataPart in dataParts:
-			studentName.append(dataPart)
+		studentName = " ".join(dataParts)
 
 		if len(studentName) < 1:
 			return (0, None, "```Make sure to include Name or Enrolment!```")
 
-		studentName = " ".join(studentName)
-		enrolmentNumber = await self.getEnrolmentNumber(studentName)
+		enrolmentNumber = self.getEnrolmentNumber(studentName)
 		if enrolmentNumber is None:
 			return (0, None, "```Enrolment not found!```")
 
@@ -121,15 +128,15 @@ class MessageHandler:
 
 		return (1, None, resultResponse)
 	
-	async def fetchResult(self, enrolmentNumber, program = 'BCA', typeProgram = 1):
+	async def fetchResult(self, enrolmentNumber, program = "BCA", typeProgram = 1):
 		import requests
 		from bs4 import BeautifulSoup
 
 		url = "https://gradecard.ignou.ac.in/gradecard/view_gradecard.aspx"
-		params = {'eno':enrolmentNumber, 'prog':program, 'type': typeProgram}
+		params = {"eno":enrolmentNumber, "prog":program, "type": typeProgram}
 
 		urlResponse = requests.post(url, params = params, verify=False)
-		htmlParser = BeautifulSoup(urlResponse.text, 'html.parser')
+		htmlParser = BeautifulSoup(urlResponse.text, "html.parser")
 
 		name = htmlParser.find(id="ctl00_ContentPlaceHolder1_lblDispname").get_text()
 		if len(name)==0:
@@ -146,12 +153,12 @@ class MessageHandler:
 			assignmentMarks = content[i+1]
 			termEndMarks = content[i+6]
 			practicalMarks = content[i+7]
-			passStatus = "grey_tick_emoji" if 'NOT' in content[i+8] else "green_tick_emoji"
-			if assignmentMarks != '-':
+			passStatus = "grey_tick_emoji" if "NOT" in content[i+8] else "green_tick_emoji"
+			if assignmentMarks != "-":
 				percentageCalculations[0].append(int(assignmentMarks))
-			if termEndMarks != '-':
+			if termEndMarks != "-":
 				percentageCalculations[1].append(int(termEndMarks))
-			if practicalMarks != '-':
+			if practicalMarks != "-":
 				percentageCalculations[1].append(int(practicalMarks))
 
 			requiredData.append((subjectName, assignmentMarks, termEndMarks, practicalMarks, passStatus))
@@ -160,20 +167,20 @@ class MessageHandler:
     		  ( sum(percentageCalculations[1]) / len(percentageCalculations[1]) ) * .75 )
 		))
 		return requiredData
-		return 'lol'
+		return "lol"
 
-		data = ['`'+" ".join([x.capitalize() for x in name.split()])+'`', '', '`Sub         A    T    P`']
+		data = ["`"+" ".join([x.capitalize() for x in name.split()])+"`", "", "`Sub         A    T    P`"]
 		assignmentMarks = []
 		teeMarks = []
 		for i in range(9, len(content)-9, 9):
-			data.append('`'+adjStr(content[i], dataAd[0]) + adjStr(content[i+1], dataAd[1]) + adjStr(content[i+6], dataAd[2]) + adjStr(content[i+7], dataAd[3])+'`')
-			if not content[i+1]=='-':
+			data.append("`"+adjStr(content[i], dataAd[0]) + adjStr(content[i+1], dataAd[1]) + adjStr(content[i+6], dataAd[2]) + adjStr(content[i+7], dataAd[3])+"`")
+			if not content[i+1]=="-":
 				assignmentMarks.append(int(content[i+1]))
-			if content[i+7]!='-':
+			if content[i+7]!="-":
 				teeMarks.append(int(content[i+7]))
-			elif content[i+6]!='-':
+			elif content[i+6]!="-":
 				teeMarks.append(int(content[i+6]))
-			data[-1] += "☑️" if 'NOT' in content[i+8] else "✅"
+			data[-1] += "☑️" if "NOT" in content[i+8] else "✅"
 		if not len(teeMarks):
 			percentage = "Not much data"#sum(assignmentMarks)/len(assignmentMarks)
 		else:
@@ -190,24 +197,37 @@ class MessageHandler:
 		percentage = resultResponse[-1]
 		requiredResponse = f"Subject   A   T   P   \n"
 		for subject in resultResponse[1:][:-1]:
-			cur = self.fillString(subject[0], ' ', 10, 1)
-			cur += self.fillString(subject[1], ' ', 4, 1)
-			cur += self.fillString(subject[2], ' ', 4, 1)
-			cur += self.fillString(subject[3], ' ', 4, 1)
+			cur = self.fillString(subject[0], " ", 10, 1)
+			cur += self.fillString(subject[1], " ", 4, 1)
+			cur += self.fillString(subject[2], " ", 4, 1)
+			cur += self.fillString(subject[3], " ", 4, 1)
 			cur += subject[4]
-			cur += '\n'
+			cur += "\n"
 			requiredResponse += cur
-		requiredResponse = '*' + studentName + '*\n\n' + '```' + requiredResponse + '\n' + percentage + '```'
+		requiredResponse = "*" + studentName + "*\n\n" + "```" + requiredResponse + "\n" + percentage + "```"
 		return requiredResponse.strip()
-	
-	async def getEnrolmentNumber(self, studentName):
+
+	def getEnrolmentResponse(self, dataParts):
+		studentName = " ".join(dataParts)
+		response = None
+		if len(studentName) < 1:
+			response = "```Invalid Input!```"
+		else:
+			enrolmentNumber = self.getEnrolmentNumber(studentName)
+			if enrolmentNumber is None:
+				response = "```Not Found!```"
+			else:
+				response = enrolmentNumber
+		return (0, None, response)
+
+	def getEnrolmentNumber(self, studentName):
 		if studentName.isdigit():
 			if len(studentName) != 10:
 				return None
 			else:
 				return studentName
 		enrolmentNumber = None
-		with open('./messageHandler/data/ignou/enrolments.txt', 'r') as file:
+		with open("./messageHandler/data/ignou/enrolments.txt", "r") as file:
 			lines = file.readlines()
 			for line in lines:
 				if studentName in line:
@@ -215,8 +235,37 @@ class MessageHandler:
 					break
 		return enrolmentNumber
 
-	async def getStudentName(self, enrol):
-		pass
+	async def getNameResponse(self, dataParts):
+		studentName = " ".join(dataParts)
+		response = None
+		if len(studentName) < 1:
+			response = "```Invalid Input!```"
+		else:
+			enrolmentNumber = self.getEnrolmentNumber(studentName)
+			if enrolmentNumber is None:
+				response = "```Not Found!```"
+			else:
+				studentName = await self.getStudentName(enrolmentNumber)
+				if studentName is None:
+					response = "```Not Found!```"
+				else:
+					response = studentName
+		return (0, None, response)
+
+	async def getStudentName(self, enrolmentNumber, program = "BCA", typeProgram = 1):
+		import requests
+		from bs4 import BeautifulSoup
+
+		url = "https://gradecard.ignou.ac.in/gradecard/view_gradecard.aspx"
+		params = {"eno":enrolmentNumber, "prog":program, "type": typeProgram}
+
+		urlResponse = requests.post(url, params = params, verify=False)
+		htmlParser = BeautifulSoup(urlResponse.text, "html.parser")
+
+		name = htmlParser.find(id="ctl00_ContentPlaceHolder1_lblDispname").get_text()
+		if len(name)==0:
+			return "Unknown"
+		return name
 
 	def isValidSession(self, session):
 		if 6 >= len(session) >= 5 and session[-2:].isdigit():
@@ -234,18 +283,20 @@ class MessageHandler:
 				string = symbol * lengthDiff + string
 		return string
 
-	async def getCommand(self, messageParts):
+	def getCommand(self, messageParts):
 		command = None
 		dataParts = []
-		skip = False
+		skipBotname = False
 		for part in messageParts:
-			if part == self.botName and not skip: 
-				skip = True
+			curPart = part.strip()
+			if curPart == self.botName and not skipBotname: 
+				skipBotname = True
 				continue
-			if part in self.possibleCommands:
-				command = part
+			if curPart in self.possibleCommands:
+				if command is None:
+					command = curPart
 				continue
-			dataParts.append(part)
+			dataParts.append(curPart)
 		return command, dataParts
 
 	async def isMentioned(self):
