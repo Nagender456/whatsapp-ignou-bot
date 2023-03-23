@@ -10,7 +10,9 @@ class MessageHandler:
 			"result", "marks", "grade", "grades", "gradecard", 
 			"astatus", 
 			"name",
-			"enrolment", "enrol"]
+			"enrolment", "enrol",
+			"date", "datesheet",
+			"sub", "subject"]
 		self.message = message.lower()
 
 	async def handleMessage(self):
@@ -47,11 +49,122 @@ class MessageHandler:
 			requiredResponse = self.getEnrolmentResponse(dataParts)
 			self.response.append(requiredResponse)
 		
+		elif command in ["datesheet", "date"]:
+			requiredResponse = self.getDateSheetResponse(dataParts)
+			self.response.append(requiredResponse)
+		
+		elif command in ["sub", "subject"]:
+			requiredResponse = self.getSubjectDetailResponse(dataParts)
+			self.response.append(requiredResponse)
+		
 		# elif command in ["result"]:
 		# 	resultResponse = await self.getResultResponse(dataParts)
 		# 	self.response.append(resultResponse)
 
 		return self.response
+
+	def getDateSheetResponse(self, dataParts):
+		subjects = []
+		for dataPart in dataParts:
+			if ',' in dataPart:
+				for subPart in dataPart.split(','):
+					if self.isValidSubjectCode(subPart):
+						subjects.append(subPart.replace('-', '').upper())
+				continue
+			if self.isValidSubjectCode(dataPart):
+				subjects.append(dataPart.replace('-', '').upper())
+		dateSheetResponse = self.getDateSheet(subjects)
+		dateSheetResponse = self.formatDateSheetResponse(dateSheetResponse)
+		return (0, None, dateSheetResponse)
+
+	def getDateSheet(self, subjects):
+		semDict = { 'SEM1' : [], 'SEM2' : [], 'SEM3' : [], 'SEM4' : [], 'SEM5' : [], 'SEM6' : [] }
+		with open('./messageHandler/data/ignou/courseInfo.txt', 'r') as file:
+			lines = file.readlines()
+			curSem = 0
+			for line in lines:
+				if len(line) < 3:
+					curSem += 1
+					continue
+				semDict[f"SEM{curSem}"].append(line.split()[0])
+		for sub in subjects:
+			if sub in semDict:
+				for extraSub in semDict[sub]:
+					subjects.append(extraSub)
+		for i in range(len(subjects)):
+			if subjects[i] not in semDict:
+				subjects.append(self.getAlternateSubjectCode(subjects[i]))
+		requiredData = []
+		with open('./messageHandler/data/ignou/datesheetData.txt', 'r') as file:
+			lines = file.readlines()
+			for line in lines:
+				if len(line) < 3: continue
+				words = line.split()
+				curDate = words[0]
+				curDay = words[1]
+				for courseCode in words[2:]:
+					if courseCode in subjects:
+						requiredData.append((curDate, curDay, courseCode))
+		return requiredData
+
+	def formatDateSheetResponse(self, dateSheetResponse):
+		requiredResponse = ''
+		for date, day, subject in dateSheetResponse:
+			requiredResponse += f"{date} ({day}) - {subject}\n"
+		requiredResponse += '\n(Tentative)'
+		requiredResponse = '```' + requiredResponse + '```'
+		return requiredResponse
+
+	def getSubjectDetailResponse(self, dataParts):
+		subjects = []
+		for dataPart in dataParts:
+			if ',' in dataPart:
+				for subPart in dataPart.split(','):
+					if self.isValidSubjectCode(subPart):
+						subjects.append(subPart.replace('-', '').upper())
+				continue
+			if self.isValidSubjectCode(dataPart):
+				subjects.append(dataPart.replace('-', '').upper())
+		subjectDetailResponse = self.getSubjectDetail(subjects)
+		subjectDetailResponse = self.formatSubjectDetailResponse(subjectDetailResponse)
+		return (0, None, subjectDetailResponse)
+	
+	def getSubjectDetail(self, subjects):
+		semDict = { 'SEM1' : [], 'SEM2' : [], 'SEM3' : [], 'SEM4' : [], 'SEM5' : [], 'SEM6' : [] }
+		with open('./messageHandler/data/ignou/courseInfo.txt', 'r') as file:
+			lines = file.readlines()
+			curSem = 0
+			for line in lines:
+				if len(line) < 3:
+					curSem += 1
+					continue
+				semDict[f"SEM{curSem}"].append(line.split()[0])
+		for sub in subjects:
+			if sub in semDict:
+				for extraSub in semDict[sub]:
+					subjects.append(extraSub)
+		requiredResponse = []
+		for i in range(len(subjects)):
+			subjects.append(self.getAlternateSubjectCode(subjects[i]))
+		with open('./messageHandler/data/ignou/courseInfo.txt', 'r') as file:
+			lines = file.readlines()
+			curSem = 0
+			for line in lines:
+				if len(line) < 2:
+					curSem += 1
+					continue
+				words = line.split()
+				if words[0] in subjects:
+					requiredResponse.append((words[0], ' '.join(words[1:-1]), curSem, words[-1]))
+		return requiredResponse
+
+	def formatSubjectDetailResponse(self, subjectDetailResponse):
+		requiredResponse = ''
+		index = 1
+		for subjectCode, subjectTitle, semester, credit in subjectDetailResponse:
+			requiredResponse += f"*{index}.) {subjectCode} - {subjectTitle}*\n```(Sem{semester}), Credit-{credit}```\n"
+			index+=1
+		return requiredResponse
 
 	async def getMarksResponse(self, dataParts):
 		studentName = []
@@ -272,6 +385,12 @@ class MessageHandler:
 			return True
 		return False
 
+	def isValidSubjectCode(self, code):
+		if len(code) > 10 or len(code) < 4: return False
+		if ('sem' in code.lower() and len(code) == 4) or code[-1].isdigit():
+			return True
+		return False
+
 	def fillString(self, string, symbol, length, direction):
 		lengthDiff = length - len(string)
 		if lengthDiff < 0:
@@ -302,3 +421,72 @@ class MessageHandler:
 	async def isMentioned(self):
 		if self.botName in self.message.split(): return True
 		return False
+	
+	#####################################
+
+	async def updateDatesheet(self):
+		import PyPDF2
+		def isDate(string):
+			if len(string) == 10 and string[2] in '/\\' and string[5] in '/\\':
+				return True
+			return False
+		def isDay(string):
+			return string.upper() in ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+		def isCourseCode(string):
+			if len(string) >= 4 and len(string) < 11 and string[-2:].isdigit() and string[:2].isalpha():
+				return True
+			return False
+		# try:
+		# datesheetURL = 'http://www.ignou.ac.in/userfiles/datesheet.pdf'
+		# response = requests.get(datesheetURL, stream=True)
+		# with open('./datesheet.pdf', 'wb') as fd:
+		# 	for chunk in response.iter_content(2000):
+		# 		fd.write(chunk)
+		datesheetPDF = open('datesheet.pdf', 'rb')
+		pdfReader = PyPDF2.PdfReader(datesheetPDF)
+		with open('datesheetData.txt', 'w', encoding='utf-8') as file:
+			curDate = None
+			def handleWord(word, curDate):
+				word = word.strip()
+				if len(word) < 3: return curDate
+				if isDate(word):
+					print("here")
+					curDate = word
+					file.write(f"\n{curDate} ")
+					return curDate
+				if curDate is None: return curDate
+				if isDay(word) or isCourseCode(word):
+					file.write(f"{word} ")
+				return curDate
+			for i in range(0, len(pdfReader.pages)):
+				for line in pdfReader.pages[i].extract_text().split('\n'):
+					words = line.split()
+					print(words)
+					for word in words:
+						if not isDate(word.strip()) and '/' in word:
+							words2 = word.split('/')
+							for word2 in words2:
+								curDate = handleWord(word2, curDate)
+						else:
+							curDate = handleWord(word, curDate)
+
+						
+		# printing number of pages in pdf file
+		# with open('tempTxt.txt', 'w', encoding='utf-8') as file:
+		# 	file.write(pdfReader.pages[3].extract_text())
+		# except:
+		# 	print("Something went wrong!")
+		# 	return 'Something Went Wrong!'
+		print(pdfReader.pages)
+		# for chunk in response.iter_content(2000):
+		# 	print(chunk)
+		# 	break
+
+	def getAlternateSubjectCode(self, subject):
+		for i in range(len(subject)):
+			if subject[i].isdigit():
+				if subject[i] == '0':
+					return subject[:i] + subject[i+1:]
+				else:
+					return subject[:i] + '0' + subject[i:]
+		return ''

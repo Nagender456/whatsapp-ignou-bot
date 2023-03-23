@@ -16,7 +16,7 @@ client.on('ready', () => {
     console.log('Client is ready!');
 });
 
-client.on('message', async (message) => {
+const handleMessage = async (message) => {
 	fs.writeFile('./currentMessage.txt', message.body, err => {
 		if (err) {
 			console.log(err);
@@ -30,11 +30,15 @@ client.on('message', async (message) => {
 	python.on('exit', () => {
 		if (dataToSend) {
 			dataToSend.forEach(data => {
-				const response = data.replace(/grey_tick_emoji/g, '☑️').replace(/green_tick_emoji/g, '✅');
+				const response = data.replace(/grey_tick_emoji/g, '☑️').replace(/green_tick_emoji/g, '✅').replace(/right_arrow/g, '▶️');
 				message.reply(response);
 			});
 		}
 	})
-})
+}
+
+client.on('message', handleMessage);
+
+// client.on('message_create', handleMessage);
 
 client.initialize();
